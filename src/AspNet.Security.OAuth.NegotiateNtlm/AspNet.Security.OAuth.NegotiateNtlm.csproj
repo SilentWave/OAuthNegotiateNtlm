@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Description>ASP.NET Core security middleware enabling negotiate/ntlm authentication.</Description>
+    <Authors>Luigi trabacchin</Authors>
+    <PackageTags>ntlm;negotiate;aspnetcore;authentication;oauth;security</PackageTags>
+    <PackageId>AspNet.Security.OAuth.NegotiateNtlm</PackageId>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="JetBrains.Annotations" Version="$(JetBrainsVersion)" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
