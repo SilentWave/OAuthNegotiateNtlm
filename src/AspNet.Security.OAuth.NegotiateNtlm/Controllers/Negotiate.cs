@@ -44,196 +44,194 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
         /// <returns></returns>
         public IActionResult ChallengeBrowser()
         {
-            try
+            AuthPersistence persistence = null;
+
+            if (ShortLivedPersistence.TryGetValue(GetKey(HttpContext.Connection), out var temp))
             {
-                AuthPersistence persistence = null;
+                persistence = temp as AuthPersistence;
+            }
+            var _negotiateState = persistence?.State;
 
-                if (ShortLivedPersistence.TryGetValue(GetKey(HttpContext.Connection), out var temp))
+            var authorizationHeader = Request.Headers[HeaderNames.Authorization];
+
+            if (StringValues.IsNullOrEmpty(authorizationHeader))
+            {
+                if (_negotiateState?.IsCompleted == false)
                 {
-                    persistence = temp as AuthPersistence;
+                    ShortLivedPersistence.TryRemove(GetKey(HttpContext.Connection), out _);
+                    return BadRequest("An anonymous request was received in between authentication handshake requests.");
                 }
-                var _negotiateState = persistence?.State;
+                Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix);
+                return Unauthorized();
+            }
 
-                var authorizationHeader = Request.Headers[HeaderNames.Authorization];
-
-                if (StringValues.IsNullOrEmpty(authorizationHeader))
+            var authorization = authorizationHeader.ToString();
+            string token = null;
+            if (authorization.StartsWith(NegotiateAuthenticationDefaults.AuthHeaderPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                token = authorization.Substring(NegotiateAuthenticationDefaults.AuthHeaderPrefix.Length).Trim();
+            }
+            else
+            {
+                if (_negotiateState?.IsCompleted == false)
                 {
-                    if (_negotiateState?.IsCompleted == false)
-                    {
-                        throw new InvalidOperationException("An anonymous request was received in between authentication handshake requests.");
-                    }
-                    Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix);
-                    return Unauthorized();
+                    ShortLivedPersistence.TryRemove(GetKey(HttpContext.Connection), out _);
+                    return BadRequest("Non-negotiate request was received in between authentication handshake requests.");
                 }
+                return Unauthorized();
+            }
 
-                var authorization = authorizationHeader.ToString();
-                string token = null;
-                if (authorization.StartsWith(NegotiateAuthenticationDefaults.AuthHeaderPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    token = authorization.Substring(NegotiateAuthenticationDefaults.AuthHeaderPrefix.Length).Trim();
-                }
-                else
-                {
-                    if (_negotiateState?.IsCompleted == false)
-                    {
-                        throw new InvalidOperationException("Non-negotiate request was received in between authentication handshake requests.");
-                    }
-                    return Unauthorized();
-                }
+            // WinHttpHandler re-authenticates an existing connection if it gets another challenge on subsequent requests.
+            if (_negotiateState?.IsCompleted == true)
+            {
+                //Logger.Reauthenticating();
+                _negotiateState.Dispose();
+                _negotiateState = null;
+                persistence.State = null;
+            }
 
-                // WinHttpHandler re-authenticates an existing connection if it gets another challenge on subsequent requests.
-                if (_negotiateState?.IsCompleted == true)
+            _negotiateState ??= Options.StateFactory.CreateInstance();
+
+            var outgoing = _negotiateState.GetOutgoingBlob(token, out var errorType, out var exception);
+            //Logger.LogInformation(errorType.ToString());
+            if (errorType != BlobErrorType.None)
+            {
+                _negotiateState.Dispose();
+                _negotiateState = null;
+                if (persistence?.State != null)
                 {
-                    //Logger.Reauthenticating();
-                    _negotiateState.Dispose();
-                    _negotiateState = null;
+                    persistence.State.Dispose();
                     persistence.State = null;
                 }
 
-                _negotiateState ??= Options.StateFactory.CreateInstance();
-
-                var outgoing = _negotiateState.GetOutgoingBlob(token, out var errorType, out var exception);
-                //Logger.LogInformation(errorType.ToString());
-                if (errorType != BlobErrorType.None)
+                if (errorType == BlobErrorType.CredentialError)
                 {
-                    _negotiateState.Dispose();
-                    _negotiateState = null;
-                    if (persistence?.State != null)
-                    {
-                        persistence.State.Dispose();
-                        persistence.State = null;
-                    }
-
-                    if (errorType == BlobErrorType.CredentialError)
-                    {
-                        //Logger.CredentialError(exception);
-                        //authFailedEventCalled = true; // Could throw, and we don't want to double trigger the event.
-                        //var result = await InvokeAuthenticateFailedEvent(exception);
-                        //return result ?? false; // Default to skipping the handler, let AuthZ generate a new 401
-                        return Unauthorized();
-                    }
-                    else if (errorType == BlobErrorType.ClientError)
-                    {
-                        //Logger.ClientError(exception);
-                        //authFailedEventCalled = true; // Could throw, and we don't want to double trigger the event.
-                        //var result = await InvokeAuthenticateFailedEvent(exception);
-                        //if (result.HasValue)
-                        //{
-                        //    return result.Value;
-                        //}
-                        return BadRequest(); // Default to terminating request
-                    }
-
-                    throw exception;
-                }
-
-                if (!_negotiateState.IsCompleted)
-                {
-                    persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
-                    // Save the state long enough to complete the multi-stage handshake.
-                    // We'll remove it once complete if !PersistNtlm/KerberosCredentials.
-                    persistence.State = _negotiateState;
-
-                    //Logger.IncompleteNegotiateChallenge();
-                    Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix + outgoing);
+                    //Logger.CredentialError(exception);
+                    //authFailedEventCalled = true; // Could throw, and we don't want to double trigger the event.
+                    //var result = await InvokeAuthenticateFailedEvent(exception);
+                    //return result ?? false; // Default to skipping the handler, let AuthZ generate a new 401
                     return Unauthorized();
                 }
-
-                //Logger.NegotiateComplete();
-
-                // There can be a final blob of data we need to send to the client, but let the request execute as normal.
-                if (!string.IsNullOrEmpty(outgoing))
+                else if (errorType == BlobErrorType.ClientError)
                 {
-                    Response.OnStarting(() =>
-                    {
+                    //Logger.ClientError(exception);
+                    //authFailedEventCalled = true; // Could throw, and we don't want to double trigger the event.
+                    //var result = await InvokeAuthenticateFailedEvent(exception);
+                    //if (result.HasValue)
+                    //{
+                    //    return result.Value;
+                    //}
+                    ShortLivedPersistence.TryRemove(GetKey(HttpContext.Connection), out _);
+                    return BadRequest("Client error"); // Default to terminating request
+                }
+
+                throw exception;
+            }
+
+            if (!_negotiateState.IsCompleted)
+            {
+                persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
+                // Save the state long enough to complete the multi-stage handshake.
+                // We'll remove it once complete if !PersistNtlm/KerberosCredentials.
+                persistence.State = _negotiateState;
+
+                //Logger.IncompleteNegotiateChallenge();
+                Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix + outgoing);
+                return Unauthorized();
+            }
+
+            //Logger.NegotiateComplete();
+
+            // There can be a final blob of data we need to send to the client, but let the request execute as normal.
+            if (!string.IsNullOrEmpty(outgoing))
+            {
+                Response.OnStarting(() =>
+                {
                         // Only include it if the response ultimately succeeds. This avoids adding it twice if Challenge is called again.
                         if (Response.StatusCode < StatusCodes.Status400BadRequest)
-                        {
-                            Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix + outgoing);
-                        }
-                        return Task.CompletedTask;
-                    });
-                }
-
-                // Deal with connection credential persistence.
-
-                if (_negotiateState.Protocol == "NTLM" && !Options.PersistNtlmCredentials)
-                {
-                    // NTLM was already put in the persitence cache on the prior request so we could complete the handshake.
-                    // Take it out if we don't want it to persist.
-                    Debug.Assert(object.ReferenceEquals(persistence?.State, _negotiateState),
-                        "NTLM is a two stage process, it must have already been in the cache for the handshake to succeed.");
-                    //Logger.DisablingCredentialPersistence(_negotiateState.Protocol);
-                    persistence.State = null;
-                    Response.RegisterForDispose(_negotiateState);
-                }
-                else if (_negotiateState.Protocol == "Kerberos")
-                {
-                    // Kerberos can require one or two stage handshakes
-                    if (Options.PersistKerberosCredentials)
                     {
-                        //Logger.EnablingCredentialPersistence();
-                        persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
-                        persistence.State = _negotiateState;
+                        Response.Headers.Append(HeaderNames.WWWAuthenticate, NegotiateAuthenticationDefaults.AuthHeaderPrefix + outgoing);
                     }
-                    else
-                    {
-                        if (persistence?.State != null)
-                        {
-                            //Logger.DisablingCredentialPersistence(_negotiateState.Protocol);
-                            persistence.State = null;
-                        }
-                        Response.RegisterForDispose(_negotiateState);
-                    }
-                }
+                    return Task.CompletedTask;
+                });
+            }
 
-                // Note we run the Authenticated event in HandleAuthenticateAsync so it is per-request rather than per connection.
+            // Deal with connection credential persistence.
 
-                persistence?.Dispose();
-
-                // Make a new copy of the user for each request, they are mutable objects and
-                // things like ClaimsTransformation run per request.
-                var identity = _negotiateState.GetIdentity();
-                ClaimsPrincipal principal;
-                if (identity is WindowsIdentity winIdentity)
+            if (_negotiateState.Protocol == "NTLM" && !Options.PersistNtlmCredentials)
+            {
+                // NTLM was already put in the persitence cache on the prior request so we could complete the handshake.
+                // Take it out if we don't want it to persist.
+                Debug.Assert(object.ReferenceEquals(persistence?.State, _negotiateState),
+                    "NTLM is a two stage process, it must have already been in the cache for the handshake to succeed.");
+                //Logger.DisablingCredentialPersistence(_negotiateState.Protocol);
+                persistence.State = null;
+                Response.RegisterForDispose(_negotiateState);
+            }
+            else if (_negotiateState.Protocol == "Kerberos")
+            {
+                // Kerberos can require one or two stage handshakes
+                if (Options.PersistKerberosCredentials)
                 {
-                    principal = new WindowsPrincipal(winIdentity);
-                    Response.RegisterForDispose(winIdentity);
+                    //Logger.EnablingCredentialPersistence();
+                    persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
+                    persistence.State = _negotiateState;
                 }
                 else
                 {
-                    principal = new ClaimsPrincipal(new ClaimsIdentity(identity));
-                }
-
-                var code = Guid.NewGuid();
-                {
-                    var added = ShortLivedPersistence.TryAdd(
-                      code.ToString(),
-                      new UserInformation
-                      {
-                          Sub = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.WindowsSubAuthority)?.Value ?? principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.PrimarySid)?.Value,
-                          Name = principal.Identity.Name,
-                          GivenName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.GivenName)?.Value,
-                          FamilyName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Surname)?.Value,
-                          Email = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value
-                      });
-                    if (!added)
+                    if (persistence?.State != null)
                     {
-                        throw new InvalidOperationException("another key for this code already existed");
+                        //Logger.DisablingCredentialPersistence(_negotiateState.Protocol);
+                        persistence.State = null;
                     }
+                    Response.RegisterForDispose(_negotiateState);
                 }
-
-                var redirectUri = HttpContext.Request.Query["redirect_uri"];
-                var responseType = HttpContext.Request.Query["response_type"];
-                var scope = HttpContext.Request.Query["scope"];
-                var state = HttpContext.Request.Query["state"];
-                return Redirect($"{redirectUri}?state={state}&scope={scope}&response_type={responseType}&code={code}");
-
             }
-            catch (Exception ex)
+
+            // Note we run the Authenticated event in HandleAuthenticateAsync so it is per-request rather than per connection.
+
+            persistence?.Dispose();
+
+            // Make a new copy of the user for each request, they are mutable objects and
+            // things like ClaimsTransformation run per request.
+            var identity = _negotiateState.GetIdentity();
+            ClaimsPrincipal principal;
+            if (identity is WindowsIdentity winIdentity)
             {
-                return RedirectToAction(nameof(Error));
+                principal = new WindowsPrincipal(winIdentity);
+                Response.RegisterForDispose(winIdentity);
             }
+            else
+            {
+                principal = new ClaimsPrincipal(new ClaimsIdentity(identity));
+            }
+
+            var code = Guid.NewGuid();
+            {
+                var added = ShortLivedPersistence.TryAdd(
+                  code.ToString(),
+                  new UserInformation
+                  {
+                      Sub = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.WindowsSubAuthority)?.Value ?? principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.PrimarySid)?.Value,
+                      Name = principal.Identity.Name,
+                      GivenName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.GivenName)?.Value,
+                      FamilyName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Surname)?.Value,
+                      Email = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value
+                  });
+                if (!added)
+                {
+                    // this is not probable
+                    throw new InvalidOperationException("another key for this code already existed");
+                }
+            }
+
+            var redirectUri = HttpContext.Request.Query["redirect_uri"];
+            var responseType = HttpContext.Request.Query["response_type"];
+            var scope = HttpContext.Request.Query["scope"];
+            var state = HttpContext.Request.Query["state"];
+            return Redirect($"{redirectUri}?state={state}&scope={scope}&response_type={responseType}&code={code}");
+
+
         }
 
         public IActionResult UserInformation()

@@ -13,7 +13,7 @@
     <Company>SilentWave</Company>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>StrongNameSignature.snk</AssemblyOriginatorKeyFile>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
