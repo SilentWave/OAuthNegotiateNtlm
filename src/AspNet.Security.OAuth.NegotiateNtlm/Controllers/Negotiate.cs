@@ -34,6 +34,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
             return Ok();
         }
 
+        private String GetKey(ConnectionInfo ci) => ci.Id + "_" + NegotiateAuthenticationDefaults.AuthPersistenceKey;
 
         /// <summary>
         /// Browser won't send authorization header automatically.
@@ -47,7 +48,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
             {
                 AuthPersistence persistence = null;
 
-                if (ShortLivedPersistence.TryGetValue(NegotiateAuthenticationDefaults.AuthPersistenceKey, out var temp))
+                if (ShortLivedPersistence.TryGetValue(GetKey(HttpContext.Connection), out var temp))
                 {
                     persistence = temp as AuthPersistence;
                 }
@@ -128,7 +129,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
 
                 if (!_negotiateState.IsCompleted)
                 {
-                    persistence ??= EstablishConnectionPersistence(ShortLivedPersistence);
+                    persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
                     // Save the state long enough to complete the multi-stage handshake.
                     // We'll remove it once complete if !PersistNtlm/KerberosCredentials.
                     persistence.State = _negotiateState;
@@ -172,7 +173,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
                     if (Options.PersistKerberosCredentials)
                     {
                         //Logger.EnablingCredentialPersistence();
-                        persistence ??= EstablishConnectionPersistence(ShortLivedPersistence);
+                        persistence ??= EstablishConnectionPersistence(HttpContext.Connection, ShortLivedPersistence);
                         persistence.State = _negotiateState;
                     }
                     else
@@ -221,11 +222,11 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
                         throw new InvalidOperationException("another key for this code already existed");
                     }
                 }
-                var redirectUri = HttpContext.Request.Query["redirect_uri"];
-                var state = HttpContext.Request.Query["state"];
-                var scope = HttpContext.Request.Query["scope"];
-                var responseType = HttpContext.Request.Query["response_type"];
 
+                var redirectUri = HttpContext.Request.Query["redirect_uri"];
+                var responseType = HttpContext.Request.Query["response_type"];
+                var scope = HttpContext.Request.Query["scope"];
+                var state = HttpContext.Request.Query["state"];
                 return Redirect($"{redirectUri}?state={state}&scope={scope}&response_type={responseType}&code={code}");
 
             }
@@ -266,10 +267,10 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
             return Ok(result);
         }
 
-        private AuthPersistence EstablishConnectionPersistence(Utils.TimedDictionary<String, object> items)
+        private AuthPersistence EstablishConnectionPersistence(ConnectionInfo ci, Utils.TimedDictionary<String, object> items)
         {
             var persistence = new AuthPersistence();
-            Debug.Assert(items.TryAdd(NegotiateAuthenticationDefaults.AuthPersistenceKey, persistence), "This should only be registered once per connection");
+            Debug.Assert(items.TryAdd(GetKey(ci), persistence), "This should only be registered once per connection");
             return persistence;
         }
 
