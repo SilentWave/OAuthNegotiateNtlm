@@ -7,9 +7,12 @@
   <PropertyGroup>
     <Description>ASP.NET Core security middleware enabling negotiate/ntlm authentication.</Description>
     <Authors>Luigi trabacchin</Authors>
-    <PackageTags>ntlm;negotiate;aspnetcore;authentication;oauth;security</PackageTags>
+    <PackageTags>ntlm;negotiate;aspnetcore;authentication;oauth;security;ntlm;negotiate;windows authentication;winauth</PackageTags>
     <PackageId>AspNet.Security.OAuth.NegotiateNtlm</PackageId>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Company>SilentWave</Company>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>StrongNameSignature.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
