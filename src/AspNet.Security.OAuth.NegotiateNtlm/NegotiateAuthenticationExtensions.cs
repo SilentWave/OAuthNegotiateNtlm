@@ -16,9 +16,9 @@ namespace Microsoft.Extensions.DependencyInjection
         /// </summary>
         /// <param name="builder">The authentication builder.</param>
         /// <returns>The <see cref="AuthenticationBuilder"/>.</returns>
-        public static AuthenticationBuilder AddNegotiate([NotNull] this AuthenticationBuilder builder)
+        public static AuthenticationBuilder AddOAuthNegotiate([NotNull] this AuthenticationBuilder builder)
         {
-            return builder.AddNegotiate(NegotiateAuthenticationDefaults.AuthenticationScheme, options => { });
+            return builder.AddOAuthNegotiate(NegotiateAuthenticationDefaults.AuthenticationScheme, options => { });
         }
 
         /// <summary>
@@ -28,11 +28,11 @@ namespace Microsoft.Extensions.DependencyInjection
         /// <param name="builder">The authentication builder.</param>
         /// <param name="configuration">The delegate used to configure the Negotiate options.</param>
         /// <returns>The <see cref="AuthenticationBuilder"/>.</returns>
-        public static AuthenticationBuilder AddNegotiate(
+        public static AuthenticationBuilder AddOAuthNegotiate(
             [NotNull] this AuthenticationBuilder builder,
-            [NotNull] Action<NegotiateAuthenticationOptions> configuration)
+            [NotNull] Action<OAuthNegotiateAuthenticationOptions> configuration)
         {
-            return builder.AddNegotiate(NegotiateAuthenticationDefaults.AuthenticationScheme, configuration);
+            return builder.AddOAuthNegotiate(NegotiateAuthenticationDefaults.AuthenticationScheme, configuration);
         }
 
         /// <summary>
@@ -43,11 +43,11 @@ namespace Microsoft.Extensions.DependencyInjection
         /// <param name="scheme">The authentication scheme associated with this instance.</param>
         /// <param name="configuration">The delegate used to configure the Negotiate options.</param>
         /// <returns>The <see cref="AuthenticationBuilder"/>.</returns>
-        public static AuthenticationBuilder AddNegotiate(
+        public static AuthenticationBuilder AddOAuthNegotiate(
             [NotNull] this AuthenticationBuilder builder, [NotNull] string scheme,
-            [NotNull] Action<NegotiateAuthenticationOptions> configuration)
+            [NotNull] Action<OAuthNegotiateAuthenticationOptions> configuration)
         {
-            return builder.AddNegotiate(scheme, NegotiateAuthenticationDefaults.DisplayName, configuration);
+            return builder.AddOAuthNegotiate(scheme, NegotiateAuthenticationDefaults.DisplayName, configuration);
         }
 
         /// <summary>
@@ -59,12 +59,12 @@ namespace Microsoft.Extensions.DependencyInjection
         /// <param name="caption">The optional display name associated with this instance.</param>
         /// <param name="configuration">The delegate used to configure the Negotiate options.</param>
         /// <returns>The <see cref="AuthenticationBuilder"/>.</returns>
-        public static AuthenticationBuilder AddNegotiate(
+        public static AuthenticationBuilder AddOAuthNegotiate(
             [NotNull] this AuthenticationBuilder builder,
             [NotNull] string scheme, [CanBeNull] string caption,
-            [NotNull] Action<NegotiateAuthenticationOptions> configuration)
+            [NotNull] Action<OAuthNegotiateAuthenticationOptions> configuration)
         {
-            return builder.AddOAuth<NegotiateAuthenticationOptions, NegotiateAuthenticationHandler>(scheme, caption, configuration);
+            return builder.AddOAuth<OAuthNegotiateAuthenticationOptions, NegotiateAuthenticationHandler>(scheme, caption, configuration);
         }
     }
 }

@@ -21,7 +21,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm
     /// <summary>
     /// Defines a handler for authentication using Amazon.
     /// </summary>
-    public class NegotiateAuthenticationHandler : OAuthHandler<NegotiateAuthenticationOptions>
+    public class NegotiateAuthenticationHandler : OAuthHandler<OAuthNegotiateAuthenticationOptions>
     {
         private const string NegotiateVerb = "Negotiate";
 
@@ -33,7 +33,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm
         /// <param name="encoder">The URL encoder to use.</param>
         /// <param name="clock">The system clock to use.</param>
         public NegotiateAuthenticationHandler(
-            [NotNull] IOptionsMonitor<NegotiateAuthenticationOptions> options,
+            [NotNull] IOptionsMonitor<OAuthNegotiateAuthenticationOptions> options,
             [NotNull] ILoggerFactory logger,
             [NotNull] UrlEncoder encoder,
             [NotNull] ISystemClock clock)
@@ -86,7 +86,6 @@ namespace AspNet.Security.OAuth.NegotiateNtlm
             [NotNull] AuthenticationProperties properties,
             [NotNull] OAuthTokenResponse tokens)
         {
-
             using var request = new HttpRequestMessage(HttpMethod.Get, Options.UserInformationEndpoint);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);

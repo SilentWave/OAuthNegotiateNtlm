@@ -18,12 +18,13 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
     public class Negotiate : Controller
     {
 
-        static Dictionary<String, object> RawPersistence = new Dictionary<String, object>();
+        static Utils.TimedDictionary<String, object> ShortLivedPersistence = new Utils.TimedDictionary<String, object>(TimeSpan.FromMinutes(1));
+        static Utils.TimedDictionary<String, object> LongLivedPersistence = new Utils.TimedDictionary<String, object>(TimeSpan.FromDays(7));
 
-        private readonly IOptionsMonitor<NegotiateAuthenticationOptions> _options;
-        private NegotiateAuthenticationOptions Options => _options.CurrentValue;
+        private readonly IOptionsMonitor<OAuthNegotiateAuthenticationOptions> _options;
+        private OAuthNegotiateAuthenticationOptions Options => _options.CurrentValue;
 
-        public Negotiate(IOptionsMonitor<NegotiateAuthenticationOptions> options)
+        public Negotiate(IOptionsMonitor<OAuthNegotiateAuthenticationOptions> options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
         }
@@ -44,11 +45,11 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
         {
             try
             {
-                var connectionItems = RawPersistence;
                 AuthPersistence persistence = null;
-                if (connectionItems.ContainsKey(NegotiateAuthenticationDefaults.AuthPersistenceKey))
+
+                if (ShortLivedPersistence.TryGetValue(NegotiateAuthenticationDefaults.AuthPersistenceKey, out var temp))
                 {
-                    persistence = connectionItems[NegotiateAuthenticationDefaults.AuthPersistenceKey] as AuthPersistence;
+                    persistence = temp as AuthPersistence;
                 }
                 var _negotiateState = persistence?.State;
 
@@ -127,7 +128,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
 
                 if (!_negotiateState.IsCompleted)
                 {
-                    persistence ??= EstablishConnectionPersistence(connectionItems);
+                    persistence ??= EstablishConnectionPersistence(ShortLivedPersistence);
                     // Save the state long enough to complete the multi-stage handshake.
                     // We'll remove it once complete if !PersistNtlm/KerberosCredentials.
                     persistence.State = _negotiateState;
@@ -171,7 +172,7 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
                     if (Options.PersistKerberosCredentials)
                     {
                         //Logger.EnablingCredentialPersistence();
-                        persistence ??= EstablishConnectionPersistence(connectionItems);
+                        persistence ??= EstablishConnectionPersistence(ShortLivedPersistence);
                         persistence.State = _negotiateState;
                     }
                     else
@@ -204,17 +205,22 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
                 }
 
                 var code = Guid.NewGuid();
-                RawPersistence.Add(
-                    code.ToString(),
-                    new UserInformation
+                {
+                    var added = ShortLivedPersistence.TryAdd(
+                      code.ToString(),
+                      new UserInformation
+                      {
+                          Sub = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.WindowsSubAuthority)?.Value ?? principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.PrimarySid)?.Value,
+                          Name = principal.Identity.Name,
+                          GivenName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.GivenName)?.Value,
+                          FamilyName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Surname)?.Value,
+                          Email = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value
+                      });
+                    if (!added)
                     {
-                        Sub = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.WindowsSubAuthority)?.Value ?? principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.PrimarySid)?.Value,
-                        Name = principal.Identity.Name,
-                        GivenName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.GivenName)?.Value,
-                        FamilyName = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Surname)?.Value,
-                        Email = principal.Claims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value
-                    });
-
+                        throw new InvalidOperationException("another key for this code already existed");
+                    }
+                }
                 var redirectUri = HttpContext.Request.Query["redirect_uri"];
                 var state = HttpContext.Request.Query["state"];
                 var scope = HttpContext.Request.Query["scope"];
@@ -235,30 +241,35 @@ namespace AspNet.Security.OAuth.NegotiateNtlm.Controllers
             var splitted = Request.Headers[HeaderNames.Authorization][0].Split(' ');
             var tokenKind = splitted.First();
             var token = splitted.Last();
-            var userinfo = RawPersistence[token] as UserInformation;
-
-            return Ok(userinfo);
+            if (LongLivedPersistence.TryGetValue(token, out var temp))
+            {
+                var userinfo = temp as UserInformation;
+                return Ok(userinfo);
+            }
+            return BadRequest("The requested token is invalid");
         }
 
         [HttpPost]
         public IActionResult Token()
         {
             var code = Request.Form["code"];
-            if (!RawPersistence.ContainsKey(code)) return BadRequest();
-            var userInfo = RawPersistence[code];
-            RawPersistence.Remove(code);
-            // RawPersistence[code] as ClaimsPrincipal;
+            if (!ShortLivedPersistence.ContainsKey(code)) return BadRequest();
+
+            if (!ShortLivedPersistence.TryRemove(code, out var userInfo))
+            {
+                return BadRequest("the requested code is invalid");
+            }
+
             var access = Guid.NewGuid().ToString();
-            RawPersistence[access] = userInfo;
+            LongLivedPersistence.TryAdd(access, userInfo);
             var result = new Token() { Id = code, Kind = TokenKind.bearer, Scope = "openid email profile", Access = access, ExpiresIn = 3600 };
             return Ok(result);
         }
 
-        private AuthPersistence EstablishConnectionPersistence(IDictionary<String, object> items)
+        private AuthPersistence EstablishConnectionPersistence(Utils.TimedDictionary<String, object> items)
         {
-            Debug.Assert(!items.ContainsKey(NegotiateAuthenticationDefaults.AuthPersistenceKey), "This should only be registered once per connection");
             var persistence = new AuthPersistence();
-            items.Add(NegotiateAuthenticationDefaults.AuthPersistenceKey, persistence);
+            Debug.Assert(items.TryAdd(NegotiateAuthenticationDefaults.AuthPersistenceKey, persistence), "This should only be registered once per connection");
             return persistence;
         }
 

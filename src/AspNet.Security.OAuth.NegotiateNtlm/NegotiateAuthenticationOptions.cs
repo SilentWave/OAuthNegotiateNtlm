@@ -9,12 +9,12 @@ namespace AspNet.Security.OAuth.NegotiateNtlm
     /// <summary>
     /// Defines a set of options used by <see cref="AmazonAuthenticationHandler"/>.
     /// </summary>
-    public class NegotiateAuthenticationOptions : OAuthOptions
+    public class OAuthNegotiateAuthenticationOptions : OAuthOptions
     {
         /// <summary>
-        /// Initializes a new instance of the <see cref="NegotiateAuthenticationOptions"/> class.
+        /// Initializes a new instance of the <see cref="OAuthNegotiateAuthenticationOptions"/> class.
         /// </summary>
-        public NegotiateAuthenticationOptions()
+        public OAuthNegotiateAuthenticationOptions()
         {
             ClientId = "negotiate-ntlm";
             ClientSecret = "not so secret";
